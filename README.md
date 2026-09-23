@@ -3,7 +3,8 @@
 A full-stack web application designed to automate and assist in the exploratory data analysis (EDA), preprocessing, and feature engineering of tabular datasets. 
 
 This tool serves as an intelligent copilot for data scientists, providing immediate statistical insights, interactive visualizations, and a context-aware AI chat assistant that can reason about your specific dataset.
-
+ Frontend: https://auto-ml-ai-data-science.vercel.app/
+ Backend:https://automl-ai-datascience.onrender.com/
 ## Capabilities
 
 * **Automated EDA**: Upload any CSV to immediately generate comprehensive summary statistics, schema definitions, and feature distributions.
