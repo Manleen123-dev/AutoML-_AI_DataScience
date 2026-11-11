@@ -2,7 +2,7 @@ import httpx
 import json
 import os
 import asyncio
-from groq import AsyncGroq, RateLimitError
+from groq import AsyncGroq, RateLimitError, NotFoundError
 
 async def stream_chat_response(summary_data: dict, chat_history: list, user_message: str):
     provider = os.getenv("LLM_PROVIDER", "gateway").lower()
@@ -42,8 +42,8 @@ async def stream_chat_response(summary_data: dict, chat_history: list, user_mess
             
         messages.append({"role": "user", "content": user_message})
 
-        primary_model = "llama-3.3-70b-versatile"
-        fallback_model = "meta-llama/llama-4-scout-17b-16e-instruct"
+        primary_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+        fallback_model = "llama-3.3-70b-versatile" if primary_model != "llama-3.3-70b-versatile" else "llama-3.1-8b-instant"
         
         try:
             stream = await client.chat.completions.create(
@@ -58,10 +58,10 @@ async def stream_chat_response(summary_data: dict, chat_history: list, user_mess
                 if content:
                     yield content.encode('utf-8')
                     
-        except RateLimitError as e:
-            # Fallback to secondary model if primary hits 12K TPM limit
+        except (RateLimitError, NotFoundError) as e:
+            # Fallback to secondary model if primary hits limit or is unavailable
             try:
-                yield b"\n\n*[System: Switching to fallback model due to high traffic on primary model]*\n\n"
+                yield f"\n\n*[System: Switching to fallback model ({fallback_model})]*\n\n".encode('utf-8')
                 stream = await client.chat.completions.create(
                     model=fallback_model,
                     messages=messages,
@@ -74,8 +74,8 @@ async def stream_chat_response(summary_data: dict, chat_history: list, user_mess
                     if content:
                         yield content.encode('utf-8')
                         
-            except RateLimitError as fallback_err:
-                yield f"\n\nError: Both Groq models have reached their rate limit. Please wait a minute before asking another question.".encode('utf-8')
+            except Exception as fallback_err:
+                yield f"\n\nError: Both Groq models failed. Please try again later. ({str(fallback_err)})".encode('utf-8')
         except Exception as e:
             yield f"\n\nError communicating with Groq API: {str(e)}".encode('utf-8')
             

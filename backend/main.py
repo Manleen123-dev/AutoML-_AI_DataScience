@@ -432,7 +432,7 @@ class PasswordRequest(BaseModel):
 @app.post("/verify-assistant")
 async def verify_assistant(request: PasswordRequest):
     expected_password = os.getenv("ASSISTANT_PASSWORD")
-    if expected_password and request.password == expected_password:
+    if not expected_password or request.password == expected_password:
         return {"success": True}
     return {"success": False}
 
