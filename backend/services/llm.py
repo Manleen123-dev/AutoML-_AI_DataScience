@@ -42,28 +42,27 @@ async def stream_chat_response(summary_data: dict, chat_history: list, user_mess
             
         messages.append({"role": "user", "content": user_message})
 
-        primary_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
-        fallback_model = "llama-3.3-70b-versatile" if primary_model != "llama-3.3-70b-versatile" else "llama-3.1-8b-instant"
-        
-        try:
-            stream = await client.chat.completions.create(
-                model=primary_model,
-                messages=messages,
-                temperature=0.7,
-                max_completion_tokens=2048,
-                stream=True,
-            )
-            async for chunk in stream:
-                content = chunk.choices[0].delta.content
-                if content:
-                    yield content.encode('utf-8')
-                    
-        except (RateLimitError, NotFoundError) as e:
-            # Fallback to secondary model if primary hits limit or is unavailable
+        preferred_model = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+        candidate_models = [
+            preferred_model,
+            "openai/gpt-oss-20b",
+            "qwen/qwen3.8-27b",
+            "llama-3.1-8b-instant",
+            "llama-3.3-70b-versatile",
+        ]
+        models_to_try = []
+        for m in candidate_models:
+            if m and m not in models_to_try:
+                models_to_try.append(m)
+
+        success = False
+        last_error = None
+        for idx, model_name in enumerate(models_to_try):
             try:
-                yield f"\n\n*[System: Switching to fallback model ({fallback_model})]*\n\n".encode('utf-8')
+                if idx > 0:
+                    yield f"\n\n*[System: Switching to model `{model_name}`]*\n\n".encode('utf-8')
                 stream = await client.chat.completions.create(
-                    model=fallback_model,
+                    model=model_name,
                     messages=messages,
                     temperature=0.7,
                     max_completion_tokens=2048,
@@ -73,11 +72,23 @@ async def stream_chat_response(summary_data: dict, chat_history: list, user_mess
                     content = chunk.choices[0].delta.content
                     if content:
                         yield content.encode('utf-8')
-                        
-            except Exception as fallback_err:
-                yield f"\n\nError: Both Groq models failed. Please try again later. ({str(fallback_err)})".encode('utf-8')
-        except Exception as e:
-            yield f"\n\nError communicating with Groq API: {str(e)}".encode('utf-8')
+                success = True
+                break
+            except (RateLimitError, NotFoundError) as e:
+                last_error = e
+                continue
+            except Exception as e:
+                last_error = e
+                err_str = str(e).lower()
+                if "model_not_found" in err_str or "does not exist" in err_str or "rate_limit" in err_str or "429" in err_str or "404" in err_str:
+                    continue
+                else:
+                    yield f"\n\nError communicating with Groq API: {str(e)}".encode('utf-8')
+                    success = True
+                    break
+
+        if not success:
+            yield f"\n\nError: All candidate models failed. Last error: {str(last_error)}".encode('utf-8')
             
     else:
         # Gateway Fallback Mode
